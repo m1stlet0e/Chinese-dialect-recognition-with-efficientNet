@@ -1,27 +1,28 @@
 import numpy as np
 import scipy.io.wavfile as wav
 from numpy.lib import stride_tricks
-import argparse
-import glob
 import json
 import torch
 from PIL import Image
 from torchvision import transforms
-import matplotlib.pyplot as plt
 from model import efficientnet_b0 as create_model
 import os
 import pyaudio
 import wave
 import wx
 from pydub import AudioSegment
-#录音
-# 每个缓冲区的帧数
+
+# 获取当前脚本所在目录
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+# 临时文件目录
+TEMP_DIR = os.path.join(SCRIPT_DIR, 'temp')
+# 确保temp目录存在
+os.makedirs(TEMP_DIR, exist_ok=True)
+
+# 录音参数
 CHUNK = 1024
-# 采样位数
 FORMAT = pyaudio.paInt16
-# 单声道
 CHANNELS = 1
-# 采样频率
 RATE = 48000
 
 """ short time fourier transform of audio signal """
@@ -114,33 +115,6 @@ def plotstft(audiopath, binsize=2 ** 10, plotpath=None, colormap="gray", channel
     image.save(name)
 
 
-def create_spec(input_dir, save_img_dir, audio_type):
-    # file = open(input_dir, 'r')
-    for iter, line in enumerate(glob.glob(os.path.join(input_dir,
-                                                       "*.%s" % audio_type))):  # enumerate(file.readlines()[1:]): # first line of traininData.csv is header (only for trainingData.csv)
-        # filepath = line.split(',')[0]
-        filename = line.split("/")[-1].split(".")[0]
-        # file_split.pop(-1)
-        # filename = "_".join(file_split)
-        if audio_type == "mp3":
-            wavfile = os.path.join(input_dir, filename + '.wav')
-            # os.system('ffmpeg -i ' + line +" -ar 8000 tmp.wav" )
-            # os.system("ffmpeg -i tmp.wav -ar 8000 tmp.mp3" )
-            # os.system("ffmpeg -i tmp.mp3 -ar 8000 -ac 1 "+wavfile )
-            os.system('ffmpeg -i ' + line + " " + wavfile)
-
-            # we create only one spectrogram for each speach sample
-            # we don't do vocal tract length perturbation (alpha=1.0)
-            # also we don't crop 9s part from the speech
-            plotstft(wavfile, channel=0, name=os.path.join(save_img_dir, filename + '.png'), alpha=1.0)
-            os.remove(wavfile)
-            # os.remove("tmp.mp3")
-            # os.remove("tmp.wav")
-        elif audio_type == "wav":
-            plotstft(line, channel=0, name=os.path.join(save_img_dir, filename + '_1.png'), alpha=1.0)
-            # print(save_img_dir)
-            # print(filename)
-        # print ("processed %d files" % (iter + 1));
 
 
 # 录制声音的相关函数（参数1：录制的路径；参数2：录制的声音秒数）
@@ -217,94 +191,111 @@ class MyFrame(wx.Frame):
             message = '录音时长太长'
             wx.MessageBox(message)  # 弹出提示框
 
-    def m_button1OnButtonClick(self, event):
-        # # 键盘控制
-        # keyboard = Controller()
-        # 获取文件路径
-        path = self.picker.GetPath()  # 获取当前选中文件的路径
-        if ("wav" in path ) == 0:
-            wx.MessageBox("路径错误", "提示",
-                          wx.ICON_ERROR)
-        else:
-            wx.MessageBox('输入成功!', "提示", wx.ICON_INFORMATION)
-            event.Skip()
+    def OnclickSubmit3(self, event):
+        """上传WAV文件进行预测"""
+        try:
+            path = self.picker.GetPath()
+            if not path or not os.path.exists(path):
+                wx.MessageBox('请选择一个有效的文件', '错误', wx.ICON_ERROR)
+                return
+            
+            if not path.lower().endswith('.wav'):
+                wx.MessageBox('请选择WAV格式的音频文件', '错误', wx.ICON_ERROR)
+                return
+            
+            wx.MessageBox('正在处理音频文件,请稍候...', '提示', wx.ICON_INFORMATION)
+            
+            # 生成声谱图
+            input_dir = os.path.dirname(path)
+            filename = os.path.basename(path).replace('.wav', '')
+            spec_filename = filename + '_1.png'
+            spec_path = os.path.join(TEMP_DIR, spec_filename)
+            
+            # 调用create_spec生成声谱图
+            plotstft(path, channel=0, name=spec_path, alpha=1.0)
+            
+            # 转换为RGB
+            img = Image.open(spec_path).convert("RGB")
+            img.save(spec_path)
+            
+            # 预测
+            result_text = main(spec_path)
+            
+            # 显示结果
+            wx.MessageBox(result_text, '识别结果', wx.ICON_INFORMATION)
+            
+            # 清理临时文件
+            if os.path.exists(spec_path):
+                os.remove(spec_path)
+                
+        except Exception as e:
+            wx.MessageBox(f'处理失败: {str(e)}', '错误', wx.ICON_ERROR)
+            print(f"错误详情: {e}")
+            import traceback
+            traceback.print_exc()
+    def OnclickSubmit2(self, event):
+        """开始录音并预测"""
+        try:
+            timeLength = self.text_user.GetValue()
+            
+            if not timeLength:
+                wx.MessageBox('请先输入录音时长', '提示', wx.ICON_WARNING)
+                return
+            
+            try:
+                duration = int(timeLength)
+            except ValueError:
+                wx.MessageBox('请输入有效的数字', '错误', wx.ICON_ERROR)
+                return
+            
+            if duration < 5 or duration > 10:
+                wx.MessageBox('录音时长必须在5-10秒之间', '错误', wx.ICON_ERROR)
+                return
+            
+            wx.MessageBox(f'准备录音{duration}秒,点击确定开始...', '提示', wx.ICON_INFORMATION)
+            
+            # 定义临时文件路径
+            raw_audio_path = os.path.join(TEMP_DIR, '录音样本.wav')
+            converted_audio_path = os.path.join(TEMP_DIR, '转换声道后.wav')
+            spec_image_path = os.path.join(TEMP_DIR, '录音样本_1.png')
+            
+            # 录音
+            record_audio(raw_audio_path, duration)
+            
+            # 转换为单声道
+            sound = AudioSegment.from_file(raw_audio_path, "wav")
+            sound = sound.set_channels(1)
+            sound.export(converted_audio_path, format="wav")
+            
+            # 生成声谱图
+            plotstft(converted_audio_path, channel=0, name=spec_image_path, alpha=1.0)
+            
+            # 转换为RGB
+            img = Image.open(spec_image_path).convert("RGB")
+            img.save(spec_image_path)
+            
+            # 预测
+            result_text = main(spec_image_path)
+            
+            # 显示结果
+            wx.MessageBox(result_text, '识别结果', wx.ICON_INFORMATION)
+            
+            # 清理临时文件
+            for temp_file in [raw_audio_path, converted_audio_path, spec_image_path]:
+                if os.path.exists(temp_file):
+                    try:
+                        os.remove(temp_file)
+                    except:
+                        pass
+                        
+        except Exception as e:
+            wx.MessageBox(f'录音或识别失败: {str(e)}', '错误', wx.ICON_ERROR)
+            print(f"错误详情: {e}")
+            import traceback
+            traceback.print_exc()
 
-    def OnclickSubmit3(self, event): #第二个确定键
-        path = self.picker.GetPath()  # 获取当前选中文件的路径
-        # print("path:"+path)
-        # print(os.path.dirname(path))
-        parser = argparse.ArgumentParser()
-        parser.add_argument("--input_dir", type=str, default=os.path.dirname(path),
-                            help="")
-        parser.add_argument("--save_img_dir", type=str,
-                            default=os.path.dirname(path),
-                            help="")
-        parser.add_argument("--audio_type", type=str, default="wav", help="audio type")
-
-        opt = parser.parse_args()
-        print(opt);
-        create_spec(input_dir=opt.input_dir, save_img_dir=opt.save_img_dir, audio_type=opt.audio_type)
-        filename = path.split("/")[-1].split(".")[0]
-        filename=filename + '_1.png'
-        img = Image.open(filename).convert("RGB")
-        img.save(filename)  # 原地保存
-
-        main(filename)
-
-        os.remove(filename)
-    def OnclickSubmit2(self, event): #第二个确定键
-        """ 点击确定按钮，执行方法 """
-
-        timeLength = self.text_user.GetValue()
-        record_audio(r'C:\Users\Pang Bo\Desktop\大三上\大创\2021_Junior\大创\录音样本.wav', int(timeLength))
-
-        # ************************************************************************************************
-        sound = AudioSegment.from_file(r"C:\Users\Pang Bo\Desktop\大三上\大创\2021_Junior\大创\录音样本.wav", "wav")
-        sound = sound.set_channels(1) #多声道转单声道
-
-        sound.export(r"C:\Users\Pang Bo\Desktop\大三上\大创\2021_Junior\大创转换声道后.wav", format="wav")
-
-        # ffmpeg.input(r"转换声道后.wav").output('转换完毕.wav', ar=16000).run()  # 转换采样率
-        # frames_per_second = sound.frame_rate
-        # print(frames_per_second)
-        # channel_count = sound.channels
-        # print(channel_count)
-
-        parser = argparse.ArgumentParser()
-        parser.add_argument("--input_dir", type=str, default=r'C:\Users\Pang Bo\Desktop\大三上\大创\2021_Junior\大创',
-                            help="")
-        parser.add_argument("--save_img_dir", type=str,
-                            default=r"C:\Users\Pang Bo\Desktop\大三上\大创\2021_Junior\大创",
-                            help="")
-        parser.add_argument("--audio_type", type=str, default="wav", help="audio type")
-
-        opt = parser.parse_args()
-        print(opt);
-        create_spec(input_dir=opt.input_dir, save_img_dir=opt.save_img_dir, audio_type=opt.audio_type)
-
-        img = Image.open(r"C:\Users\Pang Bo\Desktop\大三上\大创\2021_Junior\大创\录音样本_1.png").convert("RGB")
-        img.save(r"C:\Users\Pang Bo\Desktop\大三上\大创\2021_Junior\大创\录音样本_1.png")  # 原地保存
-
-        main(r"C:\Users\Pang Bo\Desktop\大三上\大创\2021_Junior\大创\录音样本_1.png")
-
-        # 清理产生的音频
-        path1 = r'C:\Users\Pang Bo\Desktop\大三上\大创\2021_Junior\大创\转换声道后.wav'
-        path2 = r'C:\Users\Pang Bo\Desktop\大三上\大创\2021_Junior\大创\录音样本_1.png"'
-        path3 = r'C:\Users\Pang Bo\Desktop\大三上\大创\2021_Junior\大创\录音样本.wav'
-        path4 = r'C:\Users\Pang Bo\Desktop\大三上\大创\2021_Junior\大创\转换声道后_1.png"'
-        os.remove(path1)
-        os.remove(path2)
-        os.remove(path3)
-        os.remove(path4)
-
-        # message = ""
-        # number=str(num)
-        # if num > 0:
-        #     wx.MessageBox("东北话\n识别词数："+number+"\n识别结果：")  # 弹出提示框
-        # else:
-        #     wx.MessageBox("未识别出结果，请点击确定重新尝试")  # 弹出提示框
-
-def main(path):
+def main(img_path):
+    """预测声谱图对应的方言"""
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     img_size = {"B0": 224,
@@ -323,51 +314,83 @@ def main(path):
          transforms.ToTensor(),
          transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])])
 
-    # load image
-    img_path =path #r"C:\Users\Pang Bo\Desktop\大三上\大创\2021_Junior\大创\录音样本_1.png"
-    assert os.path.exists(img_path), "file: '{}' dose not exist.".format(img_path)
+    # 加载图像
+    if not os.path.exists(img_path):
+        raise FileNotFoundError(f"图像文件不存在: {img_path}")
+    
     img = Image.open(img_path)
-    plt.imshow(img)
-    # [N, C, H, W]
     img = data_transform(img)
-    # expand batch dimension
     img = torch.unsqueeze(img, dim=0)
 
-    # read class_indict
-    json_path = r'C:\Users\Pang Bo\Desktop\大三上\大创\2021_Junior\大创\class_indices.json'
-    assert os.path.exists(json_path), "file: '{}' dose not exist.".format(json_path)
-
-    with open(json_path, "r") as f:
+    # 读取类别索引
+    json_path = os.path.join(SCRIPT_DIR, 'class_indices.json')
+    if not os.path.exists(json_path):
+        raise FileNotFoundError(f"类别索引文件不存在: {json_path}")
+    
+    with open(json_path, "r", encoding='utf-8') as f:
         class_indict = json.load(f)
 
-    # create model
+    # 创建模型
     model = create_model(num_classes=9).to(device)
-    # load model weights
-    model_weight_path = r"C:\Users\Pang Bo\Desktop\大三上\大创\2021_Junior\大创\weight\model-29.pth"
-    # model = nn.DataParallel(model).cuda()
+    
+    # 加载模型权重
+    model_weight_path = os.path.join(SCRIPT_DIR, 'weight', 'model-29.pth')
+    if not os.path.exists(model_weight_path):
+        raise FileNotFoundError(f"模型权重文件不存在: {model_weight_path}")
+    
     model.load_state_dict(torch.load(model_weight_path, map_location=device))
     model.eval()
+    
+    # 预测
     with torch.no_grad():
-        # predict class
         output = torch.squeeze(model(img.to(device))).cpu()
         predict = torch.softmax(output, dim=0)
         predict_cla = torch.argmax(predict).numpy()
 
-    print_res = "class: {}   prob: {:.3}".format(class_indict[str(predict_cla)],
-                                                 predict[predict_cla].numpy())
-    plt.title(print_res)
-    for i in range(len(predict)):
-        print("class: {:10}   prob: {:.3}".format(class_indict[str(i)],
-                                                  predict[i].numpy()))
-    plt.show()
+    # 方言名称映射
+    dialect_names = {
+        "changsha": "长沙话",
+        "hebei": "河北话",
+        "hefei": "合肥话",
+        "kejia": "客家话",
+        "nanchang": "南昌话",
+        "ningxia": "宁夏话",
+        "shan3xi": "陕西话",
+        "shanghai": "上海话",
+        "sichuan": "四川话"
+    }
+    
+    predicted_class = class_indict[str(predict_cla)]
+    predicted_name = dialect_names.get(predicted_class, predicted_class)
+    probability = predict[predict_cla].numpy()
+    
+    # 构建结果文本
+    result_text = f"识别结果: {predicted_name}\n"
+    result_text += f"置信度: {probability:.2%}\n\n"
+    result_text += "所有类别概率:\n"
+    
+    # 按概率排序
+    sorted_indices = torch.argsort(predict, descending=True)
+    for idx in sorted_indices:
+        class_name = class_indict[str(idx.item())]
+        dialect_name = dialect_names.get(class_name, class_name)
+        prob = predict[idx].numpy()
+        result_text += f"{dialect_name}: {prob:.2%}\n"
+    
+    print(result_text)
+    return result_text
 
 
 if __name__ == '__main__':
-    app = wx.App()                      # 初始化应用
-    frame = MyFrame(parent=None, id=-1)  # 实例MyFrame类，并传递参数
-    frame.Show()                        # 显示窗口
-    for num in range(10, 20):
-        app.MainLoop()  # 调用主循环方法
+    try:
+        app = wx.App()
+        frame = MyFrame(parent=None, id=-1)
+        frame.Show()
+        app.MainLoop()
+    except Exception as e:
+        print(f"程序启动失败: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 

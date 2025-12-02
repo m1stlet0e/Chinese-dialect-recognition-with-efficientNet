@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>方言识别 API 测试页面</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 600px;
+            width: 100%;
+            padding: 40px;
+        }
+        
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+        
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        
+        .upload-area {
+            border: 2px dashed #667eea;
+            border-radius: 10px;
+            padding: 40px;
+            text-align: center;
+            background: #f8f9ff;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-bottom: 20px;
+        }
+        
+        .upload-area:hover {
+            border-color: #764ba2;
+            background: #f0f1ff;
+        }
+        
+        .upload-area.dragover {
+            background: #e8eaff;
+            border-color: #764ba2;
+        }
+        
+        .upload-icon {
+            font-size: 48px;
+            margin-bottom: 10px;
+        }
+        
+        input[type="file"] {
+            display: none;
+        }
+        
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 25px;
+            font-size: 16px;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 10px;
+            transition: transform 0.2s;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .loading {
+            text-align: center;
+            margin-top: 20px;
+            color: #667eea;
+            display: none;
+        }
+        
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .result {
+            margin-top: 30px;
+            padding: 20px;
+            background: #f8f9ff;
+            border-radius: 10px;
+            display: none;
+        }
+        
+        .result h2 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 20px;
+        }
+        
+        .result-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        
+        .result-item:last-child {
+            border-bottom: none;
+        }
+        
+        .dialect-name {
+            font-weight: 500;
+            color: #333;
+        }
+        
+        .confidence {
+            color: #667eea;
+            font-weight: 600;
+        }
+        
+        .top-result {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        
+        .top-result h3 {
+            font-size: 24px;
+            margin-bottom: 5px;
+        }
+        
+        .top-result .confidence {
+            color: #fff;
+            font-size: 32px;
+        }
+        
+        .error {
+            background: #ffe0e0;
+            color: #d00;
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 20px;
+            display: none;
+        }
+        
+        .status {
+            text-align: center;
+            margin-bottom: 20px;
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        
+        .status.online {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .status.offline {
+            background: #f8d7da;
+            color: #721c24;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎤 方言识别系统</h1>
+        <p class="subtitle">上传音频文件,识别中国方言</p>
+        
+        <div class="status" id="status">检查服务状态...</div>
+        
+        <div class="upload-area" id="uploadArea">
+            <div class="upload-icon">📁</div>
+            <p style="color: #667eea; font-weight: 500; margin-bottom: 5px;">点击选择文件或拖拽到此处</p>
+            <p style="color: #999; font-size: 14px;">支持 WAV 和 MP3 格式</p>
+            <input type="file" id="fileInput" accept=".wav,.mp3">
+        </div>
+        
+        <div id="selectedFile" style="text-align: center; color: #666; margin-bottom: 10px;"></div>
+        
+        <button class="btn" id="uploadBtn" disabled>上传并识别</button>
+        
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>正在识别中,请稍候...</p>
+        </div>
+        
+        <div class="error" id="error"></div>
+        
+        <div class="result" id="result">
+            <div class="top-result">
+                <p style="opacity: 0.9; margin-bottom: 5px;">识别结果</p>
+                <h3 id="topDialect">--</h3>
+                <p class="confidence" id="topConfidence">--%</p>
+            </div>
+            
+            <h2>所有方言概率</h2>
+            <div id="allProbabilities"></div>
+        </div>
+    </div>
+    
+    <script>
+        const API_URL = 'http://localhost:8000';
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('fileInput');
+        const uploadBtn = document.getElementById('uploadBtn');
+        const selectedFile = document.getElementById('selectedFile');
+        const loading = document.getElementById('loading');
+        const result = document.getElementById('result');
+        const error = document.getElementById('error');
+        const status = document.getElementById('status');
+        
+        let currentFile = null;
+        
+        // 检查服务状态
+        async function checkStatus() {
+            try {
+                const response = await fetch(`${API_URL}/api/health`);
+                const data = await response.json();
+                
+                if (data.status === 'healthy') {
+                    status.className = 'status online';
+                    status.textContent = '✓ 服务在线';
+                } else {
+                    throw new Error('服务异常');
+                }
+            } catch (err) {
+                status.className = 'status offline';
+                status.textContent = '✗ 服务离线 - 请启动 API 服务';
+            }
+        }
+        
+        // 初始检查
+        checkStatus();
+        
+        // 上传区域点击
+        uploadArea.addEventListener('click', () => {
+            fileInput.click();
+        });
+        
+        // 文件选择
+        fileInput.addEventListener('change', (e) => {
+            handleFile(e.target.files[0]);
+        });
+        
+        // 拖拽上传
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+        
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+        
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            handleFile(e.dataTransfer.files[0]);
+        });
+        
+        // 处理文件
+        function handleFile(file) {
+            if (!file) return;
+            
+            const ext = file.name.split('.').pop().toLowerCase();
+            if (!['wav', 'mp3'].includes(ext)) {
+                showError('请选择 WAV 或 MP3 格式的音频文件');
+                return;
+            }
+            
+            currentFile = file;
+            selectedFile.textContent = `已选择: ${file.name}`;
+            uploadBtn.disabled = false;
+            error.style.display = 'none';
+            result.style.display = 'none';
+        }
+        
+        // 上传并识别
+        uploadBtn.addEventListener('click', async () => {
+            if (!currentFile) return;
+            
+            uploadBtn.disabled = true;
+            loading.style.display = 'block';
+            error.style.display = 'none';
+            result.style.display = 'none';
+            
+            try {
+                const formData = new FormData();
+                formData.append('file', currentFile);
+                
+                const response = await fetch(`${API_URL}/api/predict`, {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showResult(data);
+                } else {
+                    showError(data.error || '识别失败');
+                }
+            } catch (err) {
+                showError('网络错误: ' + err.message);
+            } finally {
+                loading.style.display = 'none';
+                uploadBtn.disabled = false;
+            }
+        });
+        
+        // 显示结果
+        function showResult(data) {
+            document.getElementById('topDialect').textContent = data.dialect;
+            document.getElementById('topConfidence').textContent = 
+                (data.confidence * 100).toFixed(2) + '%';
+            
+            const allProbs = document.getElementById('allProbabilities');
+            allProbs.innerHTML = '';
+            
+            // 按概率排序
+            const sorted = Object.entries(data.all_probabilities)
+                .sort((a, b) => b[1] - a[1]);
+            
+            sorted.forEach(([dialect, prob]) => {
+                const item = document.createElement('div');
+                item.className = 'result-item';
+                item.innerHTML = `
+                    <span class="dialect-name">${dialect}</span>
+                    <span class="confidence">${(prob * 100).toFixed(2)}%</span>
+                `;
+                allProbs.appendChild(item);
+            });
+            
+            result.style.display = 'block';
+        }
+        
+        // 显示错误
+        function showError(message) {
+            error.textContent = '错误: ' + message;
+            error.style.display = 'block';
+        }
+    </script>
+</body>
+</html>
+
