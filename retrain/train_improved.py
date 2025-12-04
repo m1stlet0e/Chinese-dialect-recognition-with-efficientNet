@@ -74,8 +74,16 @@ def evaluate_detailed(model, data_loader, device, class_names):
 
 
 def main(args):
-    device = torch.device(args.device if torch.cuda.is_available() else "cpu")
-    print(f"使用设备: {device}")
+    # 智能设备选择：优先MPS（Mac M系列芯片）> CUDA（NVIDIA GPU）> CPU
+    if args.device == 'mps' and torch.backends.mps.is_available():
+        device = torch.device("mps")
+        print("使用设备: MPS (Apple Silicon GPU加速)")
+    elif 'cuda' in args.device and torch.cuda.is_available():
+        device = torch.device(args.device)
+        print(f"使用设备: {device}")
+    else:
+        device = torch.device("cpu")
+        print("使用设备: CPU")
     
     # 创建输出目录
     os.makedirs("./weights", exist_ok=True)
@@ -300,7 +308,7 @@ if __name__ == '__main__':
     parser.add_argument('--data_path', type=str, 
                        default='./processed_data',
                        help='数据集路径')
-    parser.add_argument('--num_classes', type=int, default=7)
+    parser.add_argument('--num_classes', type=int, default=10)
     
     # 模型相关
     parser.add_argument('--model', type=str, default='B3',

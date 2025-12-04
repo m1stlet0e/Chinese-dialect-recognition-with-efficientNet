@@ -189,3 +189,4 @@ echo "测试模型:"
 echo "  python3 test_model.py --model_path $WEIGHTS_DIR/best_model_$EXP_NAME.pth"
 echo ""
 
+
