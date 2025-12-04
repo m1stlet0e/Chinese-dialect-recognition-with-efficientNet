@@ -20,7 +20,7 @@ import traceback
 
 # 添加父目录到路径
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'GUI'))
-from model import efficientnet_b0 as create_model
+from model import efficientnet_b4 as create_model
 
 app = Flask(__name__)
 CORS(app)  # 允许跨域请求
@@ -45,9 +45,10 @@ device = None
 class_indict = None
 dialect_names = {
     "changsha": "长沙话",
-    "hebei": "河北话",
+    "hebei": "普通话",
     "hefei": "合肥话",
     "kejia": "客家话",
+    "minnan": "闽南话",
     "nanchang": "南昌话",
     "ningxia": "宁夏话",
     "shan3xi": "陕西话",
@@ -68,7 +69,7 @@ def init_model():
         class_indict = json.load(f)
     
     # 加载模型
-    model = create_model(num_classes=9).to(device)
+    model = create_model(num_classes=10).to(device)
     model.load_state_dict(torch.load(MODEL_WEIGHT_PATH, map_location=device))
     model.eval()
     
@@ -154,11 +155,9 @@ def predict_audio(audio_path):
     img = Image.open(spec_path).convert('RGB')
     img.save(spec_path)
     
-    # 预处理图像
-    img_size = 224
+    # 预处理图像（与训练时保持一致）
     data_transform = transforms.Compose([
-        transforms.Resize(img_size),
-        transforms.CenterCrop(img_size),
+        transforms.Resize((380, 380)),  # 必须是380x380，不能crop
         transforms.ToTensor(),
         transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
     ])

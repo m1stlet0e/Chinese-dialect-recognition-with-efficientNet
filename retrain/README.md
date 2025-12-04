@@ -290,3 +290,4 @@ cp weights/best_model_full_training.pth ../GUI/weight/model-29.pth
 **祝训练顺利！如有问题随时查看本文档或日志文件。**
 
 
+

@@ -5,7 +5,7 @@ import json
 import torch
 from PIL import Image
 from torchvision import transforms
-from model import efficientnet_b0 as create_model
+from model import efficientnet_b4 as create_model
 import os
 import pyaudio
 import wave
@@ -331,7 +331,7 @@ def main(img_path):
         class_indict = json.load(f)
 
     # 创建模型
-    model = create_model(num_classes=9).to(device)
+    model = create_model(num_classes=10).to(device)
     
     # 加载模型权重
     model_weight_path = os.path.join(SCRIPT_DIR, 'weight', 'model-29.pth')
@@ -350,9 +350,10 @@ def main(img_path):
     # 方言名称映射
     dialect_names = {
         "changsha": "长沙话",
-        "hebei": "河北话",
+        "hebei": "普通话",
         "hefei": "合肥话",
         "kejia": "客家话",
+        "minnan": "闽南话",
         "nanchang": "南昌话",
         "ningxia": "宁夏话",
         "shan3xi": "陕西话",

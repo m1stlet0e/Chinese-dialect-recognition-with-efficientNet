@@ -200,3 +200,4 @@ nohup python3 train_improved.py [参数...] > training.log 2>&1 &
 **祝训练顺利！服务器GPU训练会比Mac快3-5倍！** 🚀
 
 
+
